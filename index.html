@@ -34,14 +34,8 @@
       <label class="block mb-1 font-semibold text-blue-700">Your ID:</label>
       <input id="idInput" type="text" placeholder="Enter ID (ex: user123)" 
              class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-400">
-    </div>
-
-    <!-- Profile Link -->
-    <div>
-      <label class="block mb-1 font-semibold text-blue-700">Profile Link:</label>
-      <input id="linkInput" type="text" placeholder="https://example.com" 
-             class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-400">
-    </div>
+    </div
+      
 
     <!-- Upload Avatar -->
     <div>
@@ -72,6 +66,9 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
   <script>
+    const bgImg = new Image();
+bgImg.src = "dome.png"; // ganti nama file dengan desain kamu
+    
     const canvas = document.getElementById("idCanvas");
     const ctx = canvas.getContext("2d");
 
@@ -142,7 +139,7 @@
       // Footer
       ctx.fillStyle = "white";
       ctx.font = "14px Arial";
-      ctx.fillText("For Fun • Doma Community", 160, 190);
+      ctx.fillText("Powered By • Doma Community", 160, 190);
 
       // Generate QR to temp canvas
       let qrCanvas = document.createElement("div");
