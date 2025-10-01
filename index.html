@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Doma ID Generator with Custom Background</title>
+  <title>Doma ID Generator (fixed Generate)</title>
 
   <!-- Tailwind -->
-  <script src="dome.png"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
     body {
@@ -78,21 +78,9 @@
     const canvas = document.getElementById("idCanvas");
     const ctx = canvas.getContext("2d");
 
-    let avatarImg = null; 
-    const bgImg = new Image();
-    bgImg.src = "dome.png"; // background desain kamu
+    let avatarImg = null; // Image object for avatar
 
-    // helper wait image loaded
-    function waitImageLoaded(img) {
-      return new Promise((resolve) => {
-        if (!img) return resolve();
-        if (img.complete && img.naturalWidth !== 0) return resolve();
-        img.onload = () => resolve();
-        img.onerror = () => resolve();
-      });
-    }
-
-    // Avatar upload
+    // update filename label + load avatar image
     document.getElementById("avatarInput").addEventListener("change", function(e) {
       const fileName = e.target.files.length > 0 ? e.target.files[0].name : "No file chosen";
       document.getElementById("avatarFileName").textContent = fileName;
@@ -105,19 +93,32 @@
       reader.onload = function(ev) {
         avatarImg = new Image();
         avatarImg.src = ev.target.result;
+        // we don't need to wait here; generateID() will await .complete if needed
       };
       reader.readAsDataURL(e.target.files[0]);
     });
 
-    // QR generator helper
+    // helper: wait until image is loaded (or resolve immediately if null or already loaded)
+    function waitImageLoaded(img) {
+      return new Promise((resolve) => {
+        if (!img) return resolve(); // nothing to wait
+        if (img.complete && img.naturalWidth !== 0) return resolve();
+        img.onload = () => resolve();
+        img.onerror = () => resolve(); // don't block forever on error
+      });
+    }
+
+    // helper: create QR inside a hidden container and wait for result (returns dataURL)
     function createQRDataURL(text, size = 120) {
       return new Promise((resolve, reject) => {
+        // create hidden wrapper and attach to body (some browsers need it in DOM)
         const wrapper = document.createElement("div");
         wrapper.style.position = "fixed";
         wrapper.style.left = "-9999px";
         wrapper.style.top = "-9999px";
         document.body.appendChild(wrapper);
 
+        // generate QR
         try {
           new QRCode(wrapper, {
             text: text,
@@ -132,94 +133,185 @@
           return reject(err);
         }
 
+        // Observe wrapper for <img> or <canvas>
         const observer = new MutationObserver(() => {
           const img = wrapper.querySelector("img");
+          const cvs = wrapper.querySelector("canvas");
           if (img) {
-            observer.disconnect();
+            // img ready -> get src
             const src = img.src;
+            observer.disconnect();
             document.body.removeChild(wrapper);
             return resolve(src);
+          } else if (cvs) {
+            try {
+              const data = cvs.toDataURL();
+              observer.disconnect();
+              document.body.removeChild(wrapper);
+              return resolve(data);
+            } catch (e) {
+              // fallback continue waiting or reject after timeout
+            }
           }
         });
         observer.observe(wrapper, { childList: true, subtree: true });
 
+        // safety timeout (2s)
         setTimeout(() => {
-          const img = wrapper.querySelector("img");
-          if (img) {
+          try {
+            const img = wrapper.querySelector("img");
+            const cvs = wrapper.querySelector("canvas");
+            if (img) {
+              const src = img.src;
+              observer.disconnect();
+              document.body.removeChild(wrapper);
+              return resolve(src);
+            } else if (cvs) {
+              const data = cvs.toDataURL();
+              observer.disconnect();
+              document.body.removeChild(wrapper);
+              return resolve(data);
+            } else {
+              observer.disconnect();
+              document.body.removeChild(wrapper);
+              return reject(new Error("QR generation timed out"));
+            }
+          } catch (e) {
             observer.disconnect();
-            const src = img.src;
-            document.body.removeChild(wrapper);
-            return resolve(src);
-          } else {
-            observer.disconnect();
-            document.body.removeChild(wrapper);
-            return reject(new Error("QR generation timeout"));
+            try { document.body.removeChild(wrapper); } catch(_) {}
+            return reject(e);
           }
         }, 2000);
       });
     }
 
-    // Generate ID
+    // main: generateID (async to wait for image & QR)
     async function generateID() {
       const name = document.getElementById("nameInput").value.trim() || "Anonymous";
       const userId = document.getElementById("idInput").value.trim() || "ID-0000";
       const link = document.getElementById("linkInput").value.trim() || "https://rialo.fun";
 
+      // disable button while generating
       const btn = document.getElementById("btnGenerate");
       btn.disabled = true;
       btn.textContent = "Generating…";
 
       try {
-        await waitImageLoaded(bgImg);
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
-
-        // Avatar
+        // wait avatar to load if exist
         await waitImageLoaded(avatarImg);
+
+        // clear and draw fixed background
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const g = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+        g.addColorStop(0, "#1e3a8a");
+        g.addColorStop(1, "#2563eb");
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // overlay for contrast
+        ctx.fillStyle = "rgba(0,0,0,0.32)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // title
+        ctx.fillStyle = "gold";
+        ctx.font = "bold 30px Arial";
+        ctx.fillText("DOMA ID CARD", 220, 48);
+
+        // avatar area (left)
         const avatarX = 60, avatarY = 90, avatarR = 70;
         ctx.save();
         ctx.beginPath();
         ctx.arc(avatarX, avatarY, avatarR, 0, Math.PI * 2);
         ctx.closePath();
         ctx.clip();
-        if (avatarImg) {
+        if (avatarImg && avatarImg.complete && avatarImg.naturalWidth !== 0) {
+          // scale and center-crop the avatar into the circle
+          // draw it to fill the circle box
           const boxSize = avatarR * 2;
+          // calculate aspect-fit cover
           const iw = avatarImg.naturalWidth, ih = avatarImg.naturalHeight;
           const aspect = Math.max(boxSize / iw, boxSize / ih);
           const dw = iw * aspect, dh = ih * aspect;
           const dx = avatarX - dw/2, dy = avatarY - dh/2;
           ctx.drawImage(avatarImg, dx, dy, dw, dh);
+        } else {
+          // placeholder
+          ctx.fillStyle = "#ffffff22";
+          ctx.fillRect(avatarX - avatarR, avatarY - avatarR, avatarR*2, avatarR*2);
         }
         ctx.restore();
 
-        // Text
-        ctx.fillStyle = "white";
+        // draw name and id
+        ctx.fillStyle = "#ffffff";
         ctx.font = "bold 26px Arial";
         ctx.fillText(name, 160, 110);
-        ctx.fillStyle = "yellow";
+        ctx.fillStyle = "#facc15";
         ctx.font = "20px Arial";
         ctx.fillText(userId, 160, 145);
 
-        // QR
-        const qrDataUrl = await createQRDataURL(link, 140);
-        const qrImg = new Image();
-        qrImg.src = qrDataUrl;
-        await waitImageLoaded(qrImg);
-        ctx.drawImage(qrImg, canvas.width - 160, canvas.height - 150, 120, 120);
+        // small tagline
+        ctx.fillStyle = "#ffffffcc";
+        ctx.font = "14px Arial";
+        ctx.fillText("For . Doma Community", 160, 180);
 
+        // now generate QR as dataURL (await)
+        const qrDataUrl = await createQRDataURL(link, 140).catch(err => null);
+
+        // draw QR if available
+        if (qrDataUrl) {
+          const qrImg = new Image();
+          qrImg.src = qrDataUrl;
+          await waitImageLoaded(qrImg);
+          // place at bottom-right with small margin
+          const qw = 120, qh = 120;
+          ctx.drawImage(qrImg, canvas.width - qw - 40, canvas.height - qh - 30, qw, qh);
+        } else {
+          // fallback: draw link text
+          ctx.fillStyle = "#ffffffcc";
+          ctx.font = "12px Arial";
+          ctx.fillText(link, canvas.width - 260, canvas.height - 30);
+        }
+      } catch (err) {
+        console.error("Generate error:", err);
+        alert("Failed to generate ID. See console for details.");
       } finally {
         btn.disabled = false;
         btn.textContent = "🎨 Generate ID Card";
       }
     }
 
-    // Download ID
+    // download function
     function downloadID() {
-      const link = document.createElement("a");
-      link.download = "doma-id.png";
-      link.href = canvas.toDataURL("image/png");
-      link.click();
+      // ensure latest preview — call generate synchronously (but generate is async),
+      // we await generation then download. To keep it simple: call generateID and after it finishes, download.
+      (async () => {
+        const btn = document.getElementById("btnGenerate");
+        // if button disabled, generation already running — wait a moment
+        if (btn.disabled) return; // avoid double
+        await generateID(); // ensure canvas updated
+        const link = document.createElement("a");
+        // higher resolution export: draw to offscreen canvas scaled x2
+        const scale = 2;
+        const w = canvas.width * scale, h = canvas.height * scale;
+        const tmp = document.createElement("canvas");
+        tmp.width = w; tmp.height = h;
+        const tctx = tmp.getContext("2d");
+        // fill transparent or white background for export
+        tctx.fillStyle = "#0000";
+        tctx.fillRect(0,0,w,h);
+        // draw original canvas scaled
+        tctx.drawImage(canvas, 0, 0, w, h);
+        link.download = `doma-id-${(document.getElementById("idInput").value || "id").replace(/\s+/g,"_")}.png`;
+        link.href = tmp.toDataURL("image/png");
+        link.click();
+      })();
     }
+
+    // optional: generate a default preview on load
+    window.addEventListener("load", () => {
+      // keep it empty to avoid autofiring; or uncomment to auto preview:
+      // generateID();
+    });
   </script>
 </body>
 </html>
